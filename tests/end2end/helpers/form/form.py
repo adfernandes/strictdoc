@@ -154,6 +154,13 @@ class Form:  # pylint: disable=invalid-name
         assert isinstance(field_value, str)
 
         field_xpath = f"(//*[@mid='{mid}' and @data-testid='{test_id}'])"
+        element = self.test_case.find_element(field_xpath)
+        hidden_field = element.find_element(
+            By.XPATH,
+            "following-sibling::*[self::input[@type='hidden'] or self::textarea][1]",
+        )
+        value_before_typing = hidden_field.get_attribute("value")
+
         for _ in range(3):
             self.test_case.type(field_xpath, f"{field_value}", by=By.XPATH)
             element = self.test_case.find_element(field_xpath)
@@ -164,6 +171,22 @@ class Form:  # pylint: disable=invalid-name
                 f"The text field could not be filled with the value: "
                 f"'{field_value}'."
             )
+
+        # An autocompletable field (e.g. relation UID) mirrors its visible
+        # contenteditable text into a sibling hidden control on a debounced
+        # 'input' listener (autocompletable_field.js), not synchronously like
+        # a plain contenteditable field (editable_field.js). Returning right
+        # after the text check above can race an immediately following action
+        # (e.g. form submit) against that debounce, silently submitting the
+        # hidden control's stale value. Wait for the mirror to move off its
+        # pre-typing value before returning. This does not compare it against
+        # field_value directly: the mirror may normalize it (e.g. trimming
+        # whitespace for a singleline field), so an exact match can never
+        # arrive even once the debounce has genuinely fired.
+        WebDriverWait(self.test_case.driver, 2).until(
+            lambda _: hidden_field.get_attribute("value")
+            != value_before_typing
+        )
 
     def do_use_first_autocomplete_result(
         self, test_id: str, field_value: str
