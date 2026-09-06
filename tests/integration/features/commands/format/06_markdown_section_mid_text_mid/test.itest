@@ -25,8 +25,11 @@ CHECK-NEXT: **MID**: 11111111111111111111111111111111
 CHECK: **Type**: TEXT \
 CHECK-NEXT: **MID**: 22222222222222222222222222222222
 
-# TEXT statement is preserved.
-CHECK: **Statement**: This is a text statement.
+# TEXT statement is preserved; the **Statement**: label from the input is
+# stripped (a human-authored mimic of the node's own field label). The
+# {{^}} anchor ensures nothing (e.g. a leftover "**Statement**:") precedes
+# the statement text on its line.
+CHECK: {{^}}This is a text statement.
 
 # Second pass must produce identical output (idempotency).
 RUN: cp -r %T/pass1 %T/pass2

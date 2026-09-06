@@ -90,6 +90,13 @@ class SDMarkdownReader:
     # node bodies (used when the grammar's TEXT element declares a MID field).
     _text_type_line_re = re.compile(r"^\*\*Type\*\*: TEXT(?: \\)?$")
     _text_mid_line_re = re.compile(r"^\*\*MID\*\*: (\S+)$")
+    # A **Statement**: label at the front of a TEXT node's body (root-level
+    # or nested in a SECTION) is redundant: the node is always rendered with
+    # its own "Statement" field label, so a literal one typed by the author
+    # must not become part of the parsed STATEMENT field value.
+    _text_statement_line_re = re.compile(
+        r"^\*\*(?:Statement|STATEMENT)\*\*:(.*)$"
+    )
     dict_entry_pattern = re.compile(
         r"^\s*\*\*(?P<name>[A-Za-z0-9][A-Za-z0-9 _-]*)\*\*:\s*`?(?P<value>[^`]*)`?\s*(?:\\)?$"
     )
@@ -371,6 +378,11 @@ class SDMarkdownReader:
         if len(root_text.strip()) > 0:
             root_text_mid, root_text_statement = (
                 SDMarkdownReader._try_parse_text_meta(root_text)
+            )
+            root_text_statement = (
+                SDMarkdownReader._strip_leading_statement_label(
+                    root_text_statement
+                )
             )
             root_text_node = SDMarkdownReader._create_text_node(
                 parent=document,
@@ -691,6 +703,9 @@ class SDMarkdownReader:
         elif len(effective_body.strip()) > 0:
             text_mid, text_statement = SDMarkdownReader._try_parse_text_meta(
                 effective_body
+            )
+            text_statement = SDMarkdownReader._strip_leading_statement_label(
+                text_statement
             )
             text_node = SDMarkdownReader._create_text_node(
                 parent=section_node,
@@ -1554,6 +1569,44 @@ class SDMarkdownReader:
 
         remaining = "".join(lines[idx:])
         return mid_value, remaining
+
+    @staticmethod
+    def _strip_leading_statement_label(body: str) -> str:
+        r"""
+        Strip a **Statement**: label at the front of a TEXT node's body
+        (root-level or nested in a SECTION). SDOC-MD-27/28 authors sometimes
+        type it as a visual mimic of the field label; the writer never
+        re-emits it (SDMarkdownWriter._serialize_text_node always writes the
+        statement verbatim), so the reader must accept both a label-less
+        body and one prefixed with this label. Handles both the inline form
+        (**Statement**: value) and the block form (**Statement**: alone,
+        blank line, then the body).
+        """
+        lines = body.splitlines(keepends=True)
+        if len(lines) == 0:
+            return body
+
+        first_line = lines[0]
+        first_line_text = first_line.rstrip("\r\n")
+        statement_match = SDMarkdownReader._text_statement_line_re.match(
+            first_line_text
+        )
+        if statement_match is None:
+            return body
+
+        line_ending = first_line[len(first_line_text) :]
+        inline_value = statement_match.group(1).strip()
+        if len(inline_value) > 0:
+            lines = [inline_value + line_ending] + lines[1:]
+        else:
+            skip_idx = 1
+            while skip_idx < len(lines) and SDMarkdownReader._is_empty_line(
+                lines[skip_idx]
+            ):
+                skip_idx += 1
+            lines = lines[skip_idx:]
+
+        return "".join(lines)
 
     @staticmethod
     def _create_text_node(
