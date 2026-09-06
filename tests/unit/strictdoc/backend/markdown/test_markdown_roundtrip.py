@@ -909,7 +909,11 @@ Some assumption text.
 
 
 def test_023_type_section_mid_preserved():
-    """SECTION MID from meta block is preserved as the section's reserved_mid (MD-27)."""
+    """
+    SECTION MID from meta block is preserved as the section's reserved_mid
+    (MD-27). A leading **STATEMENT**: label in the TEXT child's body is a
+    human-authored mimic of the node's own field label and is stripped.
+    """
     input_markdown = """\
 # Document title
 
@@ -932,7 +936,7 @@ def test_023_type_section_mid_preserved():
 **Type**: SECTION \\
 **MID**: 11111111111111111111111111111111
 
-**STATEMENT**: This is a TEXT node statement, not a SECTION node statement.
+This is a TEXT node statement, not a SECTION node statement.
 """
     document, _ = _assert_markdown_roundtrip(input_markdown, expected_markdown)
 
@@ -956,7 +960,9 @@ def test_023_type_section_mid_preserved():
 def test_024_type_section_mid_with_text_mid_body():
     r"""
     SECTION MID is preserved; **Type**: TEXT \\ **MID**: ... prefix in the section
-    body is parsed as the TEXT node's machine identifier (MD-28).
+    body is parsed as the TEXT node's machine identifier (MD-28). A leading
+    **STATEMENT**: label right after the prefix is a human-authored mimic of
+    the node's own field label and is stripped.
 
     With an unresolved grammar the writer does not re-emit the TEXT TYPE/MID
     header (no TEXT element in elements_by_type), so the output contains only
@@ -979,6 +985,7 @@ def test_024_type_section_mid_with_text_mid_body():
 """
     # With an unresolved grammar the writer cannot know that TEXT has a MID
     # field, so it emits only the statement verbatim (without TYPE/MID header).
+    # The **STATEMENT**: label from the input is stripped.
     expected_markdown = """\
 # Document title
 
@@ -989,7 +996,7 @@ def test_024_type_section_mid_with_text_mid_body():
 **Type**: SECTION \\
 **MID**: 11111111111111111111111111111111
 
-**STATEMENT**: This is a text statement.
+This is a text statement.
 """
     document, _ = _assert_markdown_roundtrip(input_markdown, expected_markdown)
 
@@ -1007,7 +1014,10 @@ def test_024_type_section_mid_with_text_mid_body():
     assert text_node.mid_permanent is True
     statement_fields = text_node.ordered_fields_lookup.get("STATEMENT", [])
     assert len(statement_fields) > 0
-    assert "This is a text statement." in statement_fields[0].get_text_value()
+    assert (
+        statement_fields[0].get_text_value().strip()
+        == "This is a text statement."
+    )
 
 
 def test_025_statement_body_with_fenced_code_block_containing_field_patterns():
@@ -1251,7 +1261,10 @@ def test_032_root_level_type_text_mid_body_is_parsed_as_text_node():
     r"""
     A **Type**: TEXT \\ **MID**: ... prefix directly under the H1 (before any
     subsection) is parsed as the document's root-level TEXT node's machine
-    identifier, mirroring the section-level MD-28 convention (test_024).
+    identifier, mirroring the section-level MD-28 convention (test_024). A
+    **Statement**: label right after the prefix is a human-authored mimic of
+    the node's own field label and must not become part of the parsed
+    STATEMENT field value.
     """
     input_markdown = """\
 # Sample document
@@ -1267,13 +1280,15 @@ def test_032_root_level_type_text_mid_body_is_parsed_as_text_node():
 """
     # With an unresolved grammar the writer cannot know that TEXT has a MID
     # field, so it emits only the statement verbatim (without TYPE/MID header),
-    # matching the section-level behavior in test_024.
+    # matching the section-level behavior in test_024. The **STATEMENT**:
+    # label from the input is stripped since it is not part of the actual
+    # statement text.
     expected_markdown = """\
 # Sample document
 
 **Grammar**: sample.gra.md
 
-**STATEMENT**: This is a sample root-level text statement.
+This is a sample root-level text statement.
 
 ## Example section
 
@@ -1290,8 +1305,8 @@ def test_032_root_level_type_text_mid_body_is_parsed_as_text_node():
     statement_fields = text_node.ordered_fields_lookup.get("STATEMENT", [])
     assert len(statement_fields) > 0
     assert (
-        "This is a sample root-level text statement."
-        in statement_fields[0].get_text_value()
+        statement_fields[0].get_text_value().strip()
+        == "This is a sample root-level text statement."
     )
 
     section = document.section_contents[1]
