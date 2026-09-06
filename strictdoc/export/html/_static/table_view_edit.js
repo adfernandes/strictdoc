@@ -91,6 +91,10 @@
                 savePromise: null,
                 // Delayed blur save used by autocomplete dropdown interaction.
                 autocompleteBlurTimer: null,
+                // Bumped on every initInlineCellState() call for this cell so a
+                // fetchTurboStream() response that arrives after the cell was
+                // cancelled (or reopened) can be told apart from the current one.
+                editRequestId: 0,
             };
             cellStates.set(cell, state);
         }
@@ -443,9 +447,19 @@
         const state = getCellState(cell);
         state.originalHTML = cell.innerHTML;
         state.originalFormData = undefined;
+        const requestId = ++state.editRequestId;
         cell.removeAttribute('data-validation-error');
         updateMode(cell, 'editing');
-        fetchTurboStream(cell.dataset.url, cell);
+        fetchTurboStream(cell.dataset.url, cell, requestId);
+    }
+
+    // True while `requestId` still identifies the cell's current edit session,
+    // i.e. the cell wasn't cancelled/saved/reopened since that request was fired.
+    function isEditRequestCurrent(cell, requestId) {
+        return (
+            getCellState(cell).editRequestId === requestId
+            && (activeInlineCell === cell || activeAutocompleteCell === cell)
+        );
     }
 
     async function runCellSave(cell, saveOperation) {
@@ -629,12 +643,19 @@
         observer.observe(cell, { childList: true, subtree: true });
     }
 
-    async function fetchTurboStream(url, cell = null) {
+    async function fetchTurboStream(url, cell = null, requestId = null) {
         try {
             const response = await fetch(url, {
                 headers: { 'Accept': TURBO_ACCEPT },
             });
             const html = await response.text();
+            // A cell-scoped request (requestId set) may resolve after the cell
+            // was cancelled, saved, or reopened. Applying it then would clobber
+            // whatever the cell legitimately holds now — e.g. Escape restoring
+            // the display markup right before this response arrives.
+            if (cell && requestId !== null && !isEditRequestCurrent(cell, requestId)) {
+                return;
+            }
             if (response.ok) {
                 renderTurboStream(html);
                 // [FEATURE: skip-save-if-unchanged]
@@ -807,7 +828,18 @@
         const state = getCellState(cell);
 
         const form = getFieldForm(cell);
-        if (!form) {
+        // getFieldForm() falls back to an ancestor form for fields that share
+        // one (e.g. custom metadata rows, whose <form> wraps the whole grid and
+        // pre-exists the fetch). For those, `form` is truthy even before this
+        // cell's own inline controls have been injected, so it can't be used
+        // alone to tell whether the stream has loaded. Check for content the
+        // fetch itself injects into the cell — its own <form> (fields with a
+        // private one) or the active_form_key marker (fields sharing one).
+        const ownContentLoaded = Boolean(
+            cell.querySelector(`[${ATTR_FORM}]`)
+            || cell.querySelector('input[name="active_form_key"]')
+        );
+        if (!form || !ownContentLoaded) {
             // Stream not yet loaded — restore original content without saving.
             // activeInlineCell is already null when called from openInlineCell
             // (nulled there to prevent document.click double-save), but may still
