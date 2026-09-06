@@ -1245,3 +1245,56 @@ STATEMENT: Statement nested seven levels below the document.
 **Statement**: Statement nested seven levels below the document.
 """
     _assert_sdoc_to_markdown_roundtrip(input_sdoc, expected_markdown)
+
+
+def test_032_root_level_type_text_mid_body_is_parsed_as_text_node():
+    r"""
+    A **Type**: TEXT \\ **MID**: ... prefix directly under the H1 (before any
+    subsection) is parsed as the document's root-level TEXT node's machine
+    identifier, mirroring the section-level MD-28 convention (test_024).
+    """
+    input_markdown = """\
+# Sample document
+
+**Grammar**: `sample.gra.md`
+
+**Type**: TEXT \\
+**MID**: 11111111111111111111111111111111
+
+**STATEMENT**: This is a sample root-level text statement.
+
+## Example section
+"""
+    # With an unresolved grammar the writer cannot know that TEXT has a MID
+    # field, so it emits only the statement verbatim (without TYPE/MID header),
+    # matching the section-level behavior in test_024.
+    expected_markdown = """\
+# Sample document
+
+**Grammar**: sample.gra.md
+
+**STATEMENT**: This is a sample root-level text statement.
+
+## Example section
+
+**Type**: SECTION
+"""
+    document, _ = _assert_markdown_roundtrip(input_markdown, expected_markdown)
+
+    text_node = document.section_contents[0]
+    assert isinstance(text_node, SDocNode)
+    assert text_node.node_type == "TEXT"
+    # The TEXT MID was parsed from the TYPE/MID prefix in the root body.
+    assert str(text_node.reserved_mid) == "11111111111111111111111111111111"
+    assert text_node.mid_permanent is True
+    statement_fields = text_node.ordered_fields_lookup.get("STATEMENT", [])
+    assert len(statement_fields) > 0
+    assert (
+        "This is a sample root-level text statement."
+        in statement_fields[0].get_text_value()
+    )
+
+    section = document.section_contents[1]
+    assert isinstance(section, SDocNode)
+    assert section.node_type == "SECTION"
+    assert section.reserved_title == "Example section"

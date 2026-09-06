@@ -369,11 +369,15 @@ class SDMarkdownReader:
 
         root_text = "".join(root_body_lines_without_meta)
         if len(root_text.strip()) > 0:
+            root_text_mid, root_text_statement = (
+                SDMarkdownReader._try_parse_text_meta(root_text)
+            )
             root_text_node = SDMarkdownReader._create_text_node(
                 parent=document,
-                statement=root_text,
+                statement=root_text_statement,
                 document_reference=document_reference,
                 including_document_reference=including_document_reference,
+                mid=root_text_mid,
                 line_start=root_heading.line_start,
             )
             document.section_contents.append(root_text_node)
@@ -1519,7 +1523,7 @@ class SDMarkdownReader:
     def _try_parse_text_meta(body: str) -> Tuple[Optional[str], str]:
         r"""
         Detect and extract a **Type**: TEXT \\ **MID**: <value> prefix block
-        from a section body string.
+        from a section body string, or from the root document (H1) body.
 
         Returns (mid_value, remaining_body) when the prefix is found, or
         (None, body) when it is not present.  The remaining_body is the content
