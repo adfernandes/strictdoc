@@ -828,7 +828,18 @@
         const state = getCellState(cell);
 
         const form = getFieldForm(cell);
-        if (!form) {
+        // getFieldForm() falls back to an ancestor form for fields that share
+        // one (e.g. custom metadata rows, whose <form> wraps the whole grid and
+        // pre-exists the fetch). For those, `form` is truthy even before this
+        // cell's own inline controls have been injected, so it can't be used
+        // alone to tell whether the stream has loaded. Check for content the
+        // fetch itself injects into the cell — its own <form> (fields with a
+        // private one) or the active_form_key marker (fields sharing one).
+        const ownContentLoaded = Boolean(
+            cell.querySelector(`[${ATTR_FORM}]`)
+            || cell.querySelector('input[name="active_form_key"]')
+        );
+        if (!form || !ownContentLoaded) {
             // Stream not yet loaded — restore original content without saving.
             // activeInlineCell is already null when called from openInlineCell
             // (nulled there to prevent document.click double-save), but may still
